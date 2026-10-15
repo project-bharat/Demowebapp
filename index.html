@@ -127,7 +127,8 @@ function App(){
    imageScanner=new Html5Qrcode('qr-reader');
    const decoded=await imageScanner.scanFile(file,true);
    qrHandledRef.current=false;
-   handleQrDecoded(decoded,null,true);\n  }catch(e){setScanError('Could not read a QR code from that image. Choose a clear image containing the full invitation QR code and try again.');}
+   handleQrDecoded(decoded,null,true);
+  }catch(e){setScanError('Could not read a QR code from that image. Choose a clear image containing the full invitation QR code and try again.');}
   finally{if(imageScanner){try{await imageScanner.clear()}catch(e){}}if(qrFileRef.current)qrFileRef.current.value='';}
  }
  const nav=[{id:"welcome",label:"Welcome / Arrival",icon:"home",roles:["reception","manager"]},{id:"booker",label:"Booker",icon:"calendar",roles:["manager"]},{id:"appointments",label:"Appointments",icon:"users",roles:["manager","reception"]}];
