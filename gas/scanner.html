@@ -21,7 +21,7 @@
 <main>
   <header><h1>GalleryPass</h1><p>Camera QR scanner</p></header>
   <section class="card">
-    <p>Camera access is requested by this standalone HTTPS page, not inside the Apps Script frame. Allow camera access when Chrome asks.</p>
+    <p>Camera access is requested by this standalone HTTPS page, not inside the Apps Script frame. Allow camera access for <strong>project-bharat.github.io</strong> when Chrome asks; permission granted to script.google.com does not grant permission to this scanner.</p>
     <div id="reader"></div>
     <button id="start">Allow camera & start scanning</button>
     <button id="stop" class="secondary" disabled>Stop camera</button>
@@ -54,18 +54,19 @@
   }
   startButton.addEventListener('click',async()=>{
     say('');
+    if(window.top!==window.self){say('This scanner is embedded in a frame. Open the standalone HTTPS scanner page directly; camera access may be blocked inside embedded frames.');return;}
     if(!validGasUrl(gasUrl)){say('The Apps Script Web App URL is missing or invalid. Open the scanner from the deployed GalleryPass /exec page.');return;}
     if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){say('This page cannot access the camera. Open the HTTPS GitHub Pages scanner URL in a supported browser.');return;}
     if(typeof Html5Qrcode==='undefined'){say('The QR scanning library did not load. Check internet access and reload.');return;}
     handled=false;startButton.disabled=true;say('Requesting camera permission…');
     try{
       scanner=new Html5Qrcode('reader');
-      await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240}},onDecoded,()=>{});
+      await scanner.start({facingMode:'environment'},{fps:10,qrbox:(viewfinderWidth,viewfinderHeight)=>{const size=Math.floor(Math.min(viewfinderWidth,viewfinderHeight,280)*0.82);return {width:size,height:size};}},onDecoded,()=>{});
       stopButton.disabled=false;say('Camera is running. Point it at the guest invitation QR code.');
     }catch(e){
       scanner=null;startButton.disabled=false;stopButton.disabled=true;
       const name=e&&e.name||'';
-      if(name==='NotAllowedError'||name==='PermissionDeniedError'||name==='SecurityError')say('Camera permission was denied or blocked. Open browser site settings for this GitHub Pages site, set Camera to Allow, reload, and try again.');
+      if(name==='NotAllowedError'||name==='PermissionDeniedError'||name==='SecurityError')say('Camera permission was denied or blocked for project-bharat.github.io. In Chrome/Edge, open site settings for THIS scanner page (not script.google.com), set Camera to Allow, reload the scanner, then tap Allow camera & start scanning. If managed by your organization, camera access may be restricted by policy.');
       else if(name==='NotFoundError'||name==='DevicesNotFoundError')say('No camera was found on this device.');
       else if(name==='NotReadableError'||name==='TrackStartError')say('The camera is busy. Close other apps using the camera and retry.');
       else say('Camera failed: '+String(e&&e.message||e||'unknown error'));
