@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#203B35">
+  <title>GalleryPass Camera Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'"></script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#F7F5F0;color:#203B35;font:16px system-ui,-apple-system,sans-serif}
+    main{max-width:520px;margin:auto;padding:20px}header{padding:18px 0 10px}h1{font-size:25px;margin:0}p{line-height:1.55;color:#52615d}
+    .card{background:#fff;border:1px solid #e1e7e4;border-radius:20px;padding:18px;box-shadow:0 8px 28px #203b3510}
+    button{width:100%;border:0;border-radius:12px;padding:14px 16px;margin-top:10px;font-weight:700;font-size:15px;background:#203B35;color:#fff}
+    button.secondary{background:#fff;color:#203B35;border:1px solid #d8e0dc}button:disabled{opacity:.5}
+    #reader{margin-top:14px;overflow:hidden;border-radius:14px;min-height:120px;background:#101815}
+    #status{white-space:pre-wrap;background:#f1f5f3;border-radius:12px;padding:12px;font-size:14px;overflow-wrap:anywhere}
+    .small{font-size:12px;color:#788780}a{color:#203B35}
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>GalleryPass</h1><p>Camera QR scanner</p></header>
+  <section class="card">
+    <p>Camera access is requested by this standalone HTTPS page, not inside the Apps Script frame. Allow camera access when Chrome asks.</p>
+    <div id="reader"></div>
+    <button id="start">Allow camera & start scanning</button>
+    <button id="stop" class="secondary" disabled>Stop camera</button>
+    <div id="status" role="status" aria-live="polite" style="margin-top:14px">Ready. Tap “Allow camera & start scanning”.</div>
+    <p class="small">After a QR code is read, its value is sent to the GalleryPass Apps Script endpoint and returned to the original tab for appointment lookup. The Apps Script response is sent in no-cors mode, so this page cannot verify the server's response.</p>
+    <button class="secondary" id="back">Return to GalleryPass</button>
+  </section>
+</main>
+<script>
+(function(){
+  const params=new URLSearchParams(location.search);
+  const gasUrl=params.get('gasUrl')||'';
+  const status=document.getElementById('status');
+  const startButton=document.getElementById('start');
+  const stopButton=document.getElementById('stop');
+  const backButton=document.getElementById('back');
+  let scanner=null,handled=false;
+  function say(message){status.textContent=message;}
+  function validGasUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&u.hostname==='script.google.com'&&u.pathname.includes('/macros/s/');}catch{return false;}}
+  async function stopScanner(){const current=scanner;scanner=null;stopButton.disabled=true;startButton.disabled=false;if(current){try{await current.stop();}catch{}try{current.clear();}catch{}}}
+  async function onDecoded(raw){
+    if(handled)return;handled=true;startButton.disabled=true;say('QR captured. Sending scan to Apps Script…');
+    const value=String(raw||'').trim();let inviteCode=value;
+    try{const obj=JSON.parse(value);inviteCode=obj.inviteCode||obj.code||obj.bookingCode||obj.id||value;}catch{}
+    const match=String(inviteCode).match(/GP-\d{6}-\d{4}/i);if(match)inviteCode=match[0];
+    const payload={inviteCode:String(inviteCode).slice(0,80),rawValue:value.slice(0,500),userAgent:navigator.userAgent};
+    try{await fetch(gasUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(payload),keepalive:true});}catch(e){say('QR captured, but sending to Apps Script may have failed. Returning scan to the original tab anyway.');}
+    try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'GALLERYPASS_QR_SCANNED',payload:value},'*');say('QR captured. Scan sent; returning the value to GalleryPass. You can close this tab.');}else{say('QR captured: '+value+'\nThe original GalleryPass tab is not available. Copy this value and search manually.');}}catch(e){say('QR captured: '+value+'\nReturn to GalleryPass and search manually.');}
+    await stopScanner();
+  }
+  startButton.addEventListener('click',async()=>{
+    say('');
+    if(!validGasUrl(gasUrl)){say('The Apps Script Web App URL is missing or invalid. Open the scanner from the deployed GalleryPass /exec page.');return;}
+    if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){say('This page cannot access the camera. Open the HTTPS GitHub Pages scanner URL in a supported browser.');return;}
+    if(typeof Html5Qrcode==='undefined'){say('The QR scanning library did not load. Check internet access and reload.');return;}
+    handled=false;startButton.disabled=true;say('Requesting camera permission…');
+    try{
+      scanner=new Html5Qrcode('reader');
+      await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240}},onDecoded,()=>{});
+      stopButton.disabled=false;say('Camera is running. Point it at the guest invitation QR code.');
+    }catch(e){
+      scanner=null;startButton.disabled=false;stopButton.disabled=true;
+      const name=e&&e.name||'';
+      if(name==='NotAllowedError'||name==='PermissionDeniedError'||name==='SecurityError')say('Camera permission was denied or blocked. Open browser site settings for this GitHub Pages site, set Camera to Allow, reload, and try again.');
+      else if(name==='NotFoundError'||name==='DevicesNotFoundError')say('No camera was found on this device.');
+      else if(name==='NotReadableError'||name==='TrackStartError')say('The camera is busy. Close other apps using the camera and retry.');
+      else say('Camera failed: '+String(e&&e.message||e||'unknown error'));
+    }
+  });
+  stopButton.addEventListener('click',stopScanner);
+  backButton.addEventListener('click',()=>{if(window.opener&&!window.opener.closed)window.close();else history.back();});
+  window.addEventListener('pagehide',()=>{if(scanner){try{scanner.stop();}catch{}}});
+})();
+</script>
+</body>
+</html>
