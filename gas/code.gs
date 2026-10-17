@@ -13,9 +13,69 @@ const DEMO_RECORDS = [
 ];
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('index')
+  const template = HtmlService.createTemplateFromFile('index');
+  template.GAS_WEB_APP_URL = ScriptApp.getService().getUrl() || '';
+  return template.evaluate()
     .setTitle(APP_TITLE + ' — Appointment & Arrival Desk')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Receives camera scan events from the separately hosted HTTPS scanner.
+ * The scanner sends text/plain JSON with fetch(mode: 'no-cors'), avoiding
+ * a browser CORS preflight. The opaque response cannot confirm delivery.
+ * Demo only: anyone who knows this public endpoint can submit scan rows.
+ */
+function doPost(e) {
+  let payload;
+  try {
+    const body = e && e.postData && e.postData.contents;
+    if (!body || body.length > 5000) throw new Error('Missing or oversized scan payload.');
+    payload = JSON.parse(body);
+  } catch (err) {
+    return jsonResponse_({ok: false, error: 'Invalid scan payload.'});
+  }
+  const inviteCode = String(payload.inviteCode || '').trim().slice(0, 80);
+  const rawValue = String(payload.rawValue || '').trim().slice(0, 500);
+  if (!inviteCode && !rawValue) return jsonResponse_({ok: false, error: 'No scan value supplied.'});
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getScanSheet_();
+    sheet.appendRow([
+      new Date(),
+      safeCell_(inviteCode),
+      safeCell_(rawValue),
+      'GalleryPass camera scanner',
+      safeCell_(String(payload.userAgent || '').slice(0, 300))
+    ]);
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ok: true});
+}
+
+function jsonResponse_(value) {
+  return ContentService.createTextOutput(JSON.stringify(value))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getScanSheet_() {
+  const ss = getDataSheet_().getParent();
+  let sheet = ss.getSheetByName('Scans');
+  if (!sheet) {
+    sheet = ss.insertSheet('Scans');
+    sheet.getRange(1, 1, 1, 5).setValues([['timestamp', 'inviteCode', 'rawValue', 'source', 'userAgent']]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function safeCell_(value) {
+  const text = String(value == null ? '' : value);
+  return /^[=+@-]/.test(text) ? "'" + text : text;
 }
 
 function getRecords() {
