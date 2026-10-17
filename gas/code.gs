@@ -75,7 +75,7 @@ function getScanSheet_() {
 
 function safeCell_(value) {
   const text = String(value == null ? '' : value);
-  return /^[=+@\\-]/.test(text) ? "'" + text : text;
+  return /^[=+@-]/.test(text) ? "'" + text : text;
 }
 
 function getRecords() {
